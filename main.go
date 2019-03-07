@@ -72,6 +72,7 @@ const (
 	RAND
 )
 
+// Simulation models a run of a queue.
 type Simulation struct {
 	queue   []*Request
 	size    int
@@ -80,17 +81,24 @@ type Simulation struct {
 	timeout int
 	method  int
 
-	// request status counters
-	counter struct {
-		successes  int
-		timeouts   int
-		rejections int
-	}
-
+	counter Result
 	current *Request
 	tick    int
 }
 
+// Result holds the result of simulating a queue run.
+type Result struct {
+	successes  int
+	timeouts   int
+	rejections int
+}
+
+// Availability computes the availability of the queue over the run.
+func (r Result) Availability() float64 {
+	return float64(r.successes) / float64(r.successes+r.timeouts+r.rejections)
+}
+
+// Config holds the parameters of a queue simulation.
 type Config struct {
 	size    int
 	rate    int
@@ -99,6 +107,7 @@ type Config struct {
 	method  int
 }
 
+// NewSimulation creates a new simulation from a configuration.
 func NewSimulation(cfg Config) *Simulation {
 	switch cfg.method {
 	case FIFO, FILO, RAND:
@@ -117,14 +126,16 @@ func NewSimulation(cfg Config) *Simulation {
 	}
 }
 
-func (s *Simulation) Run(ticks int) (successes, timeouts, rejections int) {
+// Run runs a queue simulation.
+func (s *Simulation) Run(ticks int) Result {
 	for t := 0; t < ticks; t++ {
 		s.Tick()
 	}
 
-	return s.counter.successes, s.counter.timeouts, s.counter.rejections
+	return s.counter
 }
 
+// Tick advances a simulation by a single tick.
 func (s *Simulation) Tick() {
 	s.tick++
 
@@ -187,27 +198,34 @@ func (s *Simulation) Tick() {
 	}
 }
 
+// Request is an item in the queue.
 type Request struct {
 	work   int
 	budget int
 }
 
+// NewRequest creates a new Request.
 func NewRequest(work int, timeout int) *Request {
 	return &Request{work, timeout}
 }
 
+// Tick advances a request by a single tick.
 func (r *Request) Tick() {
 	r.budget--
 }
 
+// Work acheives one unit of work on a Request.
 func (r *Request) Work() {
 	r.work--
 }
 
+// Timedout reports whether a Request has timed out.
 func (r Request) Timedout() bool { return r.budget <= 0 }
 
+// Done reports whether a Request is done.
 func (r Request) Done() bool { return r.work <= 0 }
 
+// Defaults holds the main program's default parameter values.
 type Defaults struct {
 	rate    int
 	timeout int
@@ -297,9 +315,7 @@ func main() {
 		method:  method,
 	})
 
-	successes, timeouts, rejections := sim.Run(*flags.ticks)
+	res := sim.Run(*flags.ticks)
 
-	fmt.Printf("Success: %d\n", successes)
-	fmt.Printf("Timeout: %d\n", timeouts)
-	fmt.Printf("Reject: %d\n", rejections)
+	fmt.Printf("Availability: %.02f%%\n", 100*res.Availability())
 }
