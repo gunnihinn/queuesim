@@ -82,9 +82,9 @@ type Simulation struct {
 
 	// request status counters
 	counter struct {
-		success int
-		timeout int
-		reject  int
+		successes  int
+		timeouts   int
+		rejections int
 	}
 
 	current *Request
@@ -117,6 +117,14 @@ func NewSimulation(cfg Config) *Simulation {
 	}
 }
 
+func (s *Simulation) Run(ticks int) (successes, timeouts, rejections int) {
+	for t := 0; t < ticks; t++ {
+		s.Tick()
+	}
+
+	return s.counter.successes, s.counter.timeouts, s.counter.rejections
+}
+
 func (s *Simulation) Tick() {
 	s.tick++
 
@@ -126,10 +134,10 @@ func (s *Simulation) Tick() {
 		s.current.Work()
 
 		if s.current.Timedout() {
-			s.counter.timeout++
+			s.counter.timeouts++
 			s.current = nil
 		} else if s.current.Done() {
-			s.counter.success++
+			s.counter.successes++
 			s.current = nil
 		}
 	}
@@ -139,7 +147,7 @@ func (s *Simulation) Tick() {
 	for _, r := range s.queue {
 		r.Tick()
 		if r.Timedout() {
-			s.counter.timeout++
+			s.counter.timeouts++
 		} else {
 			nq = append(nq, r)
 		}
@@ -149,7 +157,7 @@ func (s *Simulation) Tick() {
 	// Accept or reject incoming request
 	if s.tick%s.rate == 0 {
 		if len(s.queue) == s.size {
-			s.counter.reject++
+			s.counter.rejections++
 		} else {
 			s.queue = append(s.queue, NewRequest(s.work, s.timeout))
 		}
@@ -281,20 +289,17 @@ func main() {
 		panic("Unknown pop method given")
 	}
 
-	cfg := Config{
+	sim := NewSimulation(Config{
 		rate:    *flags.rate,
 		timeout: *flags.timeout,
 		work:    *flags.work,
 		size:    *flags.size,
 		method:  method,
-	}
-	sim := NewSimulation(cfg)
+	})
 
-	for t := 0; t < *flags.ticks; t++ {
-		sim.Tick()
-	}
+	successes, timeouts, rejections := sim.Run(*flags.ticks)
 
-	fmt.Printf("Success: %d\n", sim.counter.success)
-	fmt.Printf("Timeout: %d\n", sim.counter.timeout)
-	fmt.Printf("Reject: %d\n", sim.counter.reject)
+	fmt.Printf("Success: %d\n", successes)
+	fmt.Printf("Timeout: %d\n", timeouts)
+	fmt.Printf("Reject: %d\n", rejections)
 }
