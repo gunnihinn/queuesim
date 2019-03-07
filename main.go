@@ -127,6 +127,7 @@ func (s *Simulation) Tick() {
 
 		if s.current.Timedout() {
 			s.counter.timeout++
+			s.current = nil
 		} else if s.current.Done() {
 			s.counter.success++
 			s.current = nil
