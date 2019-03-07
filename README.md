@@ -23,24 +23,31 @@ $ queuesim [OPTION...]
 ```
 The options `queuesim` knows about are:
 ```
---method    The method to use when popping requests from the queue (default: FIFO)
---rate      Number of incoming requests per second (default: 1)
---size      The size of the queue (default: 10)
---timeout   Request timeout (default 1s)
---work      Request work duration (default 1s)
+-method             Method to use when popping items from queue
+-rate=RATE          A new request comes every RATE ticks
+-size=SIZE          Size of queue
+-timeout=TIMEOUT    Requests have TIMEOUT ticks to complete
+-work=WORK          Requests take WORK ticks to complete
+-ticks=TICKS        Run for TICKS ticks
+-h, -help           Print help and exit
+-version            Print version and exit
 ```
 Acceptable `method` values are `FIFO`, `FILO` and `RANDOM`.
+
+The program uses discrete ticks for the passage of time. It can be helpful to
+imagine a single tick being one millisecond long when setting values for the
+various program options.
 
 ## Try
 
 Compare these runtime values:
 ```
-$ queuesim -rate 2 -work 750ms -method fifo
-$ queuesim -rate 2 -work 750ms -method filo
-$ queuesim -rate 2 -work 750ms -method random
+$ queuesim -rate 10 -timeout 100 -work 30 -size 5 -method fifo
+$ queuesim -rate 10 -timeout 100 -work 30 -size 5 -method filo
+$ queuesim -rate 10 -timeout 100 -work 30 -size 5 -method random
 ```
-That is, we receive 2 requests per second to a queue that can hold 10 items.
-Each request times out after 1 second, and it takes 750ms to process each
+That is, we receive a request every 10 ticks, to a queue that can hold 5 items.
+Each request times out after 100 ticks, and it takes 30 ticks to process each
 request.
 
 You'll notice that the amount of successful to failed requests varies quite a

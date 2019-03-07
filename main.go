@@ -1,5 +1,20 @@
 package main
 
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// Copyright 2019, Gunnar Þór Magnússon
+
 import (
 	"flag"
 	"fmt"
@@ -7,6 +22,48 @@ import (
 	"strings"
 	"time"
 )
+
+func help(def Defaults) string {
+	return strings.TrimSpace(fmt.Sprintf(`
+queuesim - Simulate a simple bounded queue
+
+USE:
+
+    queuesim [OPTION]...
+
+queuesim simulates a simple bounded queue using discrete ticks for time. It
+simulates a single producer and consumer of the queue, where waiting requests
+can time out, and keeps track of the successes, timeouts, and rejections.
+
+It can be helpful to imagine a single tick being one millisecond long when
+setting values for the various program options.
+
+OPTIONS:
+
+    -method=METHOD      Method to use when popping items from queue (default: %s)
+                        Accepted values: FIFO, FILO, RANDOM.
+    -rate=RATE          A new request comes every RATE ticks (default %d)
+    -size=SIZE          Size of queue (default %d)
+    -timeout=TIMEOUT    Requests have TIMEOUT ticks to complete (default %d)
+    -work=WORK          Requests take WORK ticks to complete (default %d)
+    -ticks=TICKS        Run for TICKS ticks (default %d)
+    -h, -help           Print help and exit
+    -version            Print version and exit
+
+CONTRIBUTING:
+
+Patches are welcome on the project's GitHub page:
+
+	https://www.github.com/gunnihinn/queuesim
+
+COPYRIGHT:
+
+This software is licensed under the GPLv3.
+Copyright 2019, Gunnar Þór Magnússon <gunnar@magnusson.io>.
+`, def.method, def.rate, def.size, def.timeout, def.work, def.ticks))
+}
+
+const VERSION = "2"
 
 const (
 	// Methods to use when popping items from a queue.
@@ -142,7 +199,25 @@ func (r Request) Timedout() bool { return r.budget <= 0 }
 
 func (r Request) Done() bool { return r.work <= 0 }
 
+type Defaults struct {
+	rate    int
+	timeout int
+	work    int
+	size    int
+	method  string
+	ticks   int
+}
+
 func main() {
+	defaults := Defaults{
+		rate:    10,
+		timeout: 100,
+		work:    30,
+		size:    5,
+		method:  "FIFO",
+		ticks:   100000,
+	}
+
 	flags := struct {
 		rate    *int
 		timeout *int
@@ -150,15 +225,31 @@ func main() {
 		size    *int
 		method  *string
 		ticks   *int
+		help    *bool
+		h       *bool
+		version *bool
 	}{
-		flag.Int("rate", 10, "A new request comes every RATE ticks"),
-		flag.Int("timeout", 100, "Requests have TIMEOUT ticks to complete"),
-		flag.Int("work", 30, "Requests take WORK ticks to complete"),
-		flag.Int("size", 5, "Size of queue"),
-		flag.String("method", "FIFO", "Method to use when popping elements from queue"),
-		flag.Int("ticks", 100000, "Number of ticks to run for"),
+		flag.Int("rate", defaults.rate, "A new request comes every RATE ticks"),
+		flag.Int("timeout", defaults.timeout, "Requests have TIMEOUT ticks to complete"),
+		flag.Int("work", defaults.work, "Requests take WORK ticks to complete"),
+		flag.Int("size", defaults.size, "Size of queue"),
+		flag.String("method", defaults.method, "Method to use when popping elements from queue"),
+		flag.Int("ticks", defaults.ticks, "Number of ticks to run for"),
+		flag.Bool("help", false, "Print help and exit"),
+		flag.Bool("h", false, "Print help and exit"),
+		flag.Bool("version", false, "Print version and exit"),
 	}
 	flag.Parse()
+
+	if *flags.h || *flags.help {
+		fmt.Println(help(defaults))
+		return
+	}
+
+	if *flags.version {
+		fmt.Println(VERSION)
+		return
+	}
 
 	if *flags.rate <= 0 {
 		panic("Rate must be positive")
