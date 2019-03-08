@@ -18,9 +18,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"time"
+
+	exprand "golang.org/x/exp/rand"
+	"gonum.org/v1/gonum/stat/distuv"
 )
 
 func help(def Defaults) string {
@@ -77,7 +81,7 @@ type Simulation struct {
 	queue   []*Request
 	size    int
 	rate    int
-	work    int
+	work    func() int
 	timeout int
 	method  int
 
@@ -102,7 +106,7 @@ func (r Result) Availability() float64 {
 type Config struct {
 	size    int
 	rate    int
-	work    int
+	work    func() int
 	timeout int
 	method  int
 }
@@ -170,7 +174,7 @@ func (s *Simulation) Tick() {
 		if len(s.queue) == s.size {
 			s.counter.rejections++
 		} else {
-			s.queue = append(s.queue, NewRequest(s.work, s.timeout))
+			s.queue = append(s.queue, NewRequest(s.work(), s.timeout))
 		}
 	}
 
@@ -252,6 +256,7 @@ func main() {
 		size    *int
 		method  *string
 		ticks   *int
+		raw     *bool
 		help    *bool
 		h       *bool
 		version *bool
@@ -262,6 +267,7 @@ func main() {
 		flag.Int("size", defaults.size, "Size of queue"),
 		flag.String("method", defaults.method, "Method to use when popping elements from queue"),
 		flag.Int("ticks", defaults.ticks, "Number of ticks to run for"),
+		flag.Bool("raw", false, "Don't pretty-print result"),
 		flag.Bool("help", false, "Print help and exit"),
 		flag.Bool("h", false, "Print help and exit"),
 		flag.Bool("version", false, "Print version and exit"),
@@ -307,15 +313,28 @@ func main() {
 		panic("Unknown pop method given")
 	}
 
+	w := distuv.Poisson{
+		Lambda: 1,
+		Src:    exprand.NewSource(uint64(time.Now().Unix())),
+	}
+
+	work := func() int {
+		return int(float64(*flags.work) * math.Pow(2, w.Rand()))
+	}
+
 	sim := NewSimulation(Config{
 		rate:    *flags.rate,
 		timeout: *flags.timeout,
-		work:    *flags.work,
+		work:    work,
 		size:    *flags.size,
 		method:  method,
 	})
 
 	res := sim.Run(*flags.ticks)
 
-	fmt.Printf("Availability: %.02f%%\n", 100*res.Availability())
+	if *flags.raw {
+		fmt.Printf("%f\n", res.Availability())
+	} else {
+		fmt.Printf("Availability: %.02f%%\n", 100*res.Availability())
+	}
 }
