@@ -3,8 +3,7 @@
 set -euo pipefail
 
 size=5
-timeout=200
-work=30
+timeout=40
 
 for rate in {200..1}; do
     fifo=$(./queuesim -method fifo -rate "$rate" -raw)

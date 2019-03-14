@@ -46,10 +46,11 @@ OPTIONS:
 
     -method=METHOD      Method to use when popping items from queue (default: %s)
                         Accepted values: FIFO, FILO, RANDOM.
-    -rate=RATE          A new request comes every RATE ticks (default %d)
+    -rate=RATE          A new request comes every 1/RATE ticks on average (default %d)
     -size=SIZE          Size of queue (default %d)
     -timeout=TIMEOUT    Requests have TIMEOUT ticks to complete (default %d)
-    -work=WORK          Requests take WORK ticks to complete (default %d)
+    -workAvg=WORK-AVG   Requests take 2^WORK-AVG ticks to complete on average (default %d)
+    -workVar=WORK-VAR   Request duration varies by 2^WORK-VAR ticks (default %d)
     -ticks=TICKS        Run for TICKS ticks (default %d)
     -h, -help           Print help and exit
     -version            Print version and exit
@@ -64,7 +65,7 @@ COPYRIGHT:
 
 This software is licensed under the GPLv3.
 Copyright 2019, Gunnar Þór Magnússon <gunnar@magnusson.io>.
-`, def.method, def.rate, def.size, def.timeout, def.work, def.ticks))
+`, def.method, def.rate, def.size, def.timeout, def.workAvg, def.workVar, def.ticks))
 }
 
 const VERSION = "2"
@@ -80,7 +81,7 @@ const (
 type Simulation struct {
 	queue   []*Request
 	size    int
-	rate    int
+	rate    func() int
 	work    func() int
 	timeout int
 	method  int
@@ -105,7 +106,7 @@ func (r Result) Availability() float64 {
 // Config holds the parameters of a queue simulation.
 type Config struct {
 	size    int
-	rate    int
+	rate    func() int
 	work    func() int
 	timeout int
 	method  int
@@ -170,7 +171,7 @@ func (s *Simulation) Tick() {
 	s.queue = nq
 
 	// Accept or reject incoming request
-	if s.tick%s.rate == 0 {
+	for i := 0; i < s.rate(); i++ {
 		if len(s.queue) == s.size {
 			s.counter.rejections++
 		} else {
@@ -233,7 +234,8 @@ func (r Request) Done() bool { return r.work <= 0 }
 type Defaults struct {
 	rate    int
 	timeout int
-	work    int
+	workAvg int
+	workVar int
 	size    int
 	method  string
 	ticks   int
@@ -243,7 +245,8 @@ func main() {
 	defaults := Defaults{
 		rate:    10,
 		timeout: 100,
-		work:    30,
+		workAvg: 5,
+		workVar: 3,
 		size:    5,
 		method:  "FIFO",
 		ticks:   100000,
@@ -252,7 +255,8 @@ func main() {
 	flags := struct {
 		rate    *int
 		timeout *int
-		work    *int
+		workAvg *int
+		workVar *int
 		size    *int
 		method  *string
 		ticks   *int
@@ -261,9 +265,10 @@ func main() {
 		h       *bool
 		version *bool
 	}{
-		flag.Int("rate", defaults.rate, "A new request comes every RATE ticks"),
+		flag.Int("rate", defaults.rate, "A new request comes every 1/RATE ticks on average"),
 		flag.Int("timeout", defaults.timeout, "Requests have TIMEOUT ticks to complete"),
-		flag.Int("work", defaults.work, "Requests take WORK ticks to complete"),
+		flag.Int("work-avg", defaults.workAvg, "Requests take 2^WORK-AVG ticks to complete on average"),
+		flag.Int("work-var", defaults.workVar, "Request WORK duration varies by 2^WORK-VAR ticks"),
 		flag.Int("size", defaults.size, "Size of queue"),
 		flag.String("method", defaults.method, "Method to use when popping elements from queue"),
 		flag.Int("ticks", defaults.ticks, "Number of ticks to run for"),
@@ -292,10 +297,6 @@ func main() {
 		panic("Timeout must be positive")
 	}
 
-	if *flags.work <= 0 {
-		panic("Work must be positive")
-	}
-
 	if *flags.size <= 0 {
 		panic("Size must be positive")
 	}
@@ -313,17 +314,27 @@ func main() {
 		panic("Unknown pop method given")
 	}
 
-	w := distuv.Poisson{
-		Lambda: 1,
+	r := distuv.Poisson{
+		Lambda: 1 / float64(*flags.rate),
 		Src:    exprand.NewSource(uint64(time.Now().Unix())),
 	}
 
+	w := distuv.Normal{
+		Mu:    float64(*flags.workAvg),
+		Sigma: float64(*flags.workVar),
+		Src:   exprand.NewSource(uint64(time.Now().Unix())),
+	}
+
+	rate := func() int {
+		return int(r.Rand())
+	}
+
 	work := func() int {
-		return int(float64(*flags.work) * math.Pow(2, w.Rand()))
+		return int(math.Pow(2, w.Rand()))
 	}
 
 	sim := NewSimulation(Config{
-		rate:    *flags.rate,
+		rate:    rate,
 		timeout: *flags.timeout,
 		work:    work,
 		size:    *flags.size,

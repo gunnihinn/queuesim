@@ -19,7 +19,7 @@ ticks between requests:
 
 To generate similar images, run:
 ```
-$ compare.sh > compare.csv
+$ compare.sh > queue.csv
 $ gnuplot plot.gp
 ```
 
