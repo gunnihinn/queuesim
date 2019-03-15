@@ -49,8 +49,7 @@ OPTIONS:
     -rate=RATE          A new request comes every 1/RATE ticks on average (default %d)
     -size=SIZE          Size of queue (default %d)
     -timeout=TIMEOUT    Requests have TIMEOUT ticks to complete (default %d)
-    -workAvg=WORK-AVG   Requests take 2^WORK-AVG ticks to complete on average (default %d)
-    -workVar=WORK-VAR   Request duration varies by 2^WORK-VAR ticks (default %d)
+    -work=WORK          Requests take 1/WORK ticks to complete on average (default %d)
     -ticks=TICKS        Run for TICKS ticks (default %d)
     -h, -help           Print help and exit
     -version            Print version and exit
@@ -65,7 +64,7 @@ COPYRIGHT:
 
 This software is licensed under the GPLv3.
 Copyright 2019, Gunnar Þór Magnússon <gunnar@magnusson.io>.
-`, def.method, def.rate, def.size, def.timeout, def.workAvg, def.workVar, def.ticks))
+`, def.method, def.rate, def.size, def.timeout, def.work, def.ticks))
 }
 
 const VERSION = "2"
@@ -234,8 +233,7 @@ func (r Request) Done() bool { return r.work <= 0 }
 type Defaults struct {
 	rate    int
 	timeout int
-	workAvg int
-	workVar int
+	work    int
 	size    int
 	method  string
 	ticks   int
@@ -245,8 +243,7 @@ func main() {
 	defaults := Defaults{
 		rate:    10,
 		timeout: 100,
-		workAvg: 5,
-		workVar: 3,
+		work:    20,
 		size:    5,
 		method:  "FIFO",
 		ticks:   100000,
@@ -255,27 +252,27 @@ func main() {
 	flags := struct {
 		rate    *int
 		timeout *int
-		workAvg *int
-		workVar *int
+		work    *int
 		size    *int
 		method  *string
 		ticks   *int
+		seed    *int64
 		raw     *bool
 		help    *bool
 		h       *bool
 		version *bool
 	}{
-		flag.Int("rate", defaults.rate, "A new request comes every 1/RATE ticks on average"),
-		flag.Int("timeout", defaults.timeout, "Requests have TIMEOUT ticks to complete"),
-		flag.Int("work-avg", defaults.workAvg, "Requests take 2^WORK-AVG ticks to complete on average"),
-		flag.Int("work-var", defaults.workVar, "Request WORK duration varies by 2^WORK-VAR ticks"),
-		flag.Int("size", defaults.size, "Size of queue"),
-		flag.String("method", defaults.method, "Method to use when popping elements from queue"),
-		flag.Int("ticks", defaults.ticks, "Number of ticks to run for"),
-		flag.Bool("raw", false, "Don't pretty-print result"),
-		flag.Bool("help", false, "Print help and exit"),
-		flag.Bool("h", false, "Print help and exit"),
-		flag.Bool("version", false, "Print version and exit"),
+		rate:    flag.Int("rate", defaults.rate, ""),
+		timeout: flag.Int("timeout", defaults.timeout, ""),
+		work:    flag.Int("work", defaults.work, ""),
+		size:    flag.Int("size", defaults.size, ""),
+		method:  flag.String("method", defaults.method, ""),
+		ticks:   flag.Int("ticks", defaults.ticks, ""),
+		seed:    flag.Int64("seed", 0, ""),
+		raw:     flag.Bool("raw", false, ""),
+		help:    flag.Bool("help", false, ""),
+		h:       flag.Bool("h", false, ""),
+		version: flag.Bool("version", false, ""),
 	}
 	flag.Parse()
 
@@ -293,12 +290,23 @@ func main() {
 		panic("Rate must be positive")
 	}
 
+	if *flags.work <= 0 {
+		panic("Work must be positive")
+	}
+
 	if *flags.timeout <= 0 {
 		panic("Timeout must be positive")
 	}
 
 	if *flags.size <= 0 {
 		panic("Size must be positive")
+	}
+
+	var seed int64
+	if *flags.seed != 0 {
+		seed = *flags.seed
+	} else {
+		seed = time.Now().Unix()
 	}
 
 	method := 0
@@ -308,7 +316,7 @@ func main() {
 	} else if strings.Contains(m, "filo") {
 		method = FILO
 	} else if strings.Contains(m, "rand") {
-		rand.Seed(time.Now().Unix())
+		rand.Seed(seed)
 		method = RAND
 	} else {
 		panic("Unknown pop method given")
@@ -316,13 +324,12 @@ func main() {
 
 	r := distuv.Poisson{
 		Lambda: 1 / float64(*flags.rate),
-		Src:    exprand.NewSource(uint64(time.Now().Unix())),
+		Src:    exprand.NewSource(uint64(seed)),
 	}
 
-	w := distuv.Normal{
-		Mu:    float64(*flags.workAvg),
-		Sigma: float64(*flags.workVar),
-		Src:   exprand.NewSource(uint64(time.Now().Unix())),
+	w := distuv.Exponential{
+		Rate: 1 / float64(*flags.work),
+		Src:  exprand.NewSource(uint64(seed)),
 	}
 
 	rate := func() int {
